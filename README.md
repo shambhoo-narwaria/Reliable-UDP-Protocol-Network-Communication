@@ -79,8 +79,5 @@ The project directory structure is as follows:
 ## Authors
 
 - [Shambhoolal Narwaria](https://github.com/mr-narwaria)
-- [Alhan Charan Beshra](https://github.com/ezio2605)
-- [Abhishek Raj](https://github.com/Abhi9708bittu)
-- [Sachin Jangid](https://github.com/sachin_jangid)
 
 Enjoy reliable data transfer using ReliableUDP project!
