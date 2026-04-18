@@ -37,53 +37,60 @@ public class Server {
         }
 
         // 2. Load configuration from support/server.in
+        int serverPort, maxWindow, seed;
+        double plp;
         File configFile = new File("support/server.in");
         if (!configFile.exists()) {
             System.err.println("[ERROR] support/server.in not found.");
             return;
         }
-        Scanner sc = new Scanner(configFile);
-        int    serverPort = Integer.parseInt(sc.nextLine().split("#")[0].trim());
-        int    maxWindow  = Integer.parseInt(sc.nextLine().split("#")[0].trim());
-        int    seed       = Integer.parseInt(sc.nextLine().split("#")[0].trim());
-        double plp        = Double.parseDouble(sc.nextLine().split("#")[0].trim());
-        sc.close();
+        try (Scanner sc = new Scanner(configFile)) {
+            serverPort = Integer.parseInt(sc.nextLine().split("#")[0].trim());
+            maxWindow  = Integer.parseInt(sc.nextLine().split("#")[0].trim());
+            seed       = Integer.parseInt(sc.nextLine().split("#")[0].trim());
+            plp        = Double.parseDouble(sc.nextLine().split("#")[0].trim());
+        }
 
         printBanner(protocol, serverPort, maxWindow, plp);
 
         // 3. Thread pool — cached pool grows as needed for concurrent clients
         ExecutorService pool = Executors.newCachedThreadPool();
 
-        // 4. Main socket — ONLY for accepting initial file-name requests
-        DatagramSocket mainSock = new DatagramSocket(serverPort);
-        byte[] buf = new byte[Packet.HEADER_SIZE + Packet.DATA_SIZE];
+        // 4. Main socket — wrapped in try-with-resources to prevent port leaks
+        try (DatagramSocket mainSock = new DatagramSocket(serverPort)) {
+            byte[] buf = new byte[Packet.HEADER_SIZE + Packet.DATA_SIZE];
 
-        // 5. Continuous accept loop
-        while (true) {
-            DatagramPacket incoming = new DatagramPacket(buf, buf.length);
-            mainSock.receive(incoming);                 // Blocks until a client connects
+            System.out.println(Packet.CLR_CYAN + "Server listening on port " + serverPort + "..." + Packet.CLR_RESET);
 
-            InetAddress clientAddr = incoming.getAddress();
-            int         clientPort = incoming.getPort();
+            // 5. Continuous accept loop
+            while (true) {
+                DatagramPacket incoming = new DatagramPacket(buf, buf.length);
+                mainSock.receive(incoming);                 // Blocks until a client connects
 
-            // Parse the file-name request packet
-            Packet req = new Packet(Arrays.copyOf(buf, incoming.getLength()), incoming.getLength());
-            String fileName = new String(req.data).trim();
+                InetAddress clientAddr = incoming.getAddress();
+                int         clientPort = incoming.getPort();
 
-            System.out.println(Packet.CLR_CYAN + "\n[CONNECT] " + clientAddr + ":" + clientPort
-                    + " → requested: " + fileName + Packet.CLR_RESET);
+                // Parse the file-name request packet
+                Packet req = new Packet(Arrays.copyOf(buf, incoming.getLength()), incoming.getLength());
+                String fileName = new String(req.data).trim();
 
-            // Hand off to a dedicated thread (non-blocking for the main loop)
-            final String fn = fileName; final int s = seed; final int w = maxWindow;
-            final double p = plp;       final String proto = protocol;
+                System.out.println(Packet.CLR_CYAN + "\n[CONNECT] " + clientAddr + ":" + clientPort
+                        + " → requested: " + fileName + Packet.CLR_RESET);
 
-            pool.submit(() -> {
-                try {
-                    serveClient(clientAddr, clientPort, fn, w, new Random(s), p, proto);
-                } catch (Exception e) {
-                    System.err.println("[ERROR] Client handler failed: " + e.getMessage());
-                }
-            });
+                // Hand off to a dedicated thread (non-blocking for the main loop)
+                final String fn = fileName; final int s = seed; final int w = maxWindow;
+                final double p = plp;       final String proto = protocol;
+
+                pool.submit(() -> {
+                    try {
+                        serveClient(clientAddr, clientPort, fn, w, new Random(s), p, proto);
+                    } catch (Exception e) {
+                        System.err.println("[ERROR] Client handler failed: " + e.getMessage());
+                    }
+                });
+            }
+        } finally {
+            pool.shutdown();
         }
     }
 
