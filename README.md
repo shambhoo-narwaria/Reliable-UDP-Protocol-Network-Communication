@@ -10,6 +10,12 @@ The system guarantees reliable, ordered, error-checked file delivery over an int
 
 ---
 
+## Deep-Dive Documentation
+For a detailed explanation of the math, technology, and algorithms behind this project, see:
+**[Technical Specification & Algorithm Deep-Dive](documentation/technical_spec.md)**
+
+---
+
 ## Architecture Overview
 
 Three focused modules, each with a single responsibility:
@@ -80,19 +86,20 @@ The client prints a live progress bar as it receives chunks:
 ## Project Structure
 
 ```text
-📦 Reliable-UDP-Protocol-Network-Communication
- ┣ 📂 bin                   ← Compiled .class files (auto-generated, do not edit)
- ┣ 📂 input                 ← Files the server can serve to clients
- ┃ ┗ 📜 server.txt
- ┣ 📂 output                ← Received files are saved here by the client
- ┣ 📂 src                   ← All Java source code
- ┃ ┣ 📜 Client.java         ← Receiver: progress bar, 3 protocol modes, stats
- ┃ ┣ 📜 Packet.java         ← Serialisation engine + CRC32 checksum helpers
- ┃ ┗ 📜 Server.java         ← Sender:  threading, 3 protocol modes, loss sim, stats
- ┣ 📂 support               ← Configuration files
- ┃ ┣ 📜 client.in           ← Client settings  (IP, ports, file, window size)
- ┃ ┗ 📜 server.in           ← Server settings  (port, window, seed, loss %)
- ┗ 📜 README.md
+Reliable-UDP-Protocol-Network-Communication
+ ┣ bin                   ← Compiled .class files (auto-generated, do not edit)
+ ┣ documentation         ← Technical deep-dives and design specs
+ ┣ input                 ← Files the server can serve to clients
+ ┃ ┗ server.txt
+ ┣ output                ← Received files are saved here by the client
+ ┣ src                   ← All Java source code
+ ┃ ┣ Client.java         ← Receiver: progress bar, 3 protocol modes, stats
+ ┃ ┣ Packet.java         ← Serialisation engine + CRC32 checksum helpers
+ ┃ ┗ Server.java         ← Sender:  threading, 3 protocol modes, loss sim, stats
+ ┣ support               ← Configuration files
+ ┃ ┣ client.in           ← Client settings  (IP, ports, file, window size)
+ ┃ ┗ server.in           ← Server settings  (port, window, seed, loss %)
+ ┗ README.md
 ```
 
 ---
@@ -133,7 +140,7 @@ java -cp bin Client input/server.txt sw
 java -cp bin Client input/server.txt sr
 ```
 
-> ⚠️ **Important:** The protocol specified for the Client must match the one the Server is running. Mismatched protocols will cause incorrect ACK/retransmit behaviour.
+> **Important:** The protocol specified for the Client must match the one the Server is running. Mismatched protocols will cause incorrect ACK/retransmit behaviour.
 
 ---
 

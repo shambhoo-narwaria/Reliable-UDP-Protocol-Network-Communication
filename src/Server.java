@@ -211,12 +211,16 @@ public class Server {
                 int ackNo = Packet.parseAck(ackBuf, ackPkt.getLength());
                 log(Packet.CLR_BLUE, "GBN-ACK ", String.format("ACK %-3d received", ackNo));
 
-                // Slide the window forward by however many packets were freshly ACKed
-                if (ackNo >= (base % seqCount)) {
-                    base += (ackNo - (base % seqCount)) + 1;
-                } else if ((base % seqCount) > seqCount / 2) {
-                    // Handle seqno wrap-around
-                    base += (seqCount - (base % seqCount)) + ackNo + 1;
+                // Robust Sequence Check: Determine if ackNo is "ahead" of base in a circular space
+                int currentPos = base % seqCount;
+                int distance = (ackNo - currentPos + seqCount) % seqCount;
+
+                if (distance < wSize) {
+                    // This is a fresh ACK that moves our base forward
+                    base += distance + 1;
+                } else {
+                    // This is likely an old/duplicate ACK; we ignore it to avoid jumping ahead incorrectly
+                    log(Packet.CLR_YELLOW, "GBN-DUP-ACK", "Ignoring old ACK " + ackNo);
                 }
 
             } catch (SocketTimeoutException e) {

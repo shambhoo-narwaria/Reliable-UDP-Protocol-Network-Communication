@@ -141,9 +141,9 @@ public class Client {
                 // In-order: write to file and advance
                 fos.write(p.data);
                 receivedSize += p.data.length;
-                sendAck(socket, serverAddr, serverPort, expectedSeq);
                 log(Packet.CLR_GREEN, "GBN-RECV", String.format("Seq %-3d  │ %d bytes  │ %s",
                         expectedSeq, p.data.length, progressBar(receivedSize, fileSize)));
+                sendAck(socket, serverAddr, serverPort, expectedSeq);
                 expectedSeq = (expectedSeq + 1) % seqCount;
 
             } else {
@@ -183,9 +183,9 @@ public class Client {
                 // Correct packet — write and flip expected bit
                 fos.write(p.data);
                 receivedSize += p.data.length;
-                sendAck(socket, serverAddr, serverPort, expectedSeq);
                 log(Packet.CLR_GREEN, "SW-RECV", String.format("Seq %-3d  │ %d bytes  │ %s",
                         expectedSeq, p.data.length, progressBar(receivedSize, fileSize)));
+                sendAck(socket, serverAddr, serverPort, expectedSeq);
                 expectedSeq = 1 - expectedSeq; // Toggle bit: 0→1, 1→0
             } else {
                 // Duplicate (server retransmitting because ACK was lost) — re-ACK politely
@@ -237,7 +237,7 @@ public class Client {
                     log(Packet.CLR_GREEN, "SR-RECV",
                             String.format("Seq %-3d buffered  │ %d bytes", seqNo, p.data.length));
                 } else {
-                    log(Packet.CLR_YELLOW, "SR-DUP", "Seq " + seqNo + " already buffered → re-ACK");
+                    log(Packet.CLR_YELLOW, "SR-DUP", "Seq " + seqNo + " already buffered");
                 }
                 // Individual ACK for every accepted packet (in or out of order)
                 sendAck(socket, serverAddr, serverPort, seqNo);

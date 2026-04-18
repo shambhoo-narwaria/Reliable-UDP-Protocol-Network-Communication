@@ -1,4 +1,4 @@
-7777
-5
-7
-0.0
+7777    # Port
+5       # Window Size
+7       # Random Seed (change this to vary the "luck" of drops)
+0.50    # 50% packet loss
