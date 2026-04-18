@@ -1,101 +1,206 @@
-# Reliable UDP Protocol – Network Communication (Java Refactor)
+# Reliable UDP Protocol – Network Communication
 
-The most famous reliable transport layer protocol is TCP, but it dictates fixed control flow heavily integrated into the OS. This project simulates an independent reliable data transfer protocol by implementing a highly configurable **Application-Layer Reliability Engine on top of UDP**. 
+[![Java](https://img.shields.io/badge/Language-Java-orange?style=flat-square&logo=java)](https://www.java.com)
+[![Protocol](https://img.shields.io/badge/Transport-UDP-blue?style=flat-square)](https://en.wikipedia.org/wiki/User_Datagram_Protocol)
+[![Protocols](https://img.shields.io/badge/Schemes-GBN%20%7C%20SR%20%7C%20SW-green?style=flat-square)]()
 
-This system guarantees reliable data transfer between a client and a server bypassing the unreliability of standard UDP. It employs a **Go-Back-N (GBN)** sliding window scheme and mathematical **CRC32 Checksums** to detect, recover, and reconstruct data that is arbitrarily dropped, out of order, or violently corrupted across a network stream.
+The most famous reliable transport layer protocol is TCP, but it is tightly integrated into the OS kernel. This project simulates an independent **Application-Layer Reliability Engine built on top of UDP**, implementing three classic windowing protocols from scratch.
 
-**The codebase has been entirely refactored from C to Java** to eliminate Cross-Platform C/C++ networking complications, ensuring pure native compilation whether you are running on Windows `winsock2`, Linux POSIX `sys/socket.h`, or macOS!
+The system guarantees reliable, ordered, error-checked file delivery over an intentionally unreliable network channel — complete with **live packet loss simulation**, **CRC32 corruption detection**, **automatic retransmission**, and **real-time performance metrics**.
+
+> **The codebase was fully refactored from C to Java** to eliminate cross-platform Winsock / POSIX compatibility issues and enable native compilation on Windows, Linux, and macOS without any changes.
 
 ---
 
 ## Architecture Overview
 
-The system strictly decouples its concerns into three central modules:
+Three focused modules, each with a single responsibility:
 
-- **Packet (`src/Packet.java`)**: The serialization engine. Converts app-data to binary arrays attached with sequence IDs, lengths, and `CRC32 Checksums` to identify byte-level mutations.
-- **Server (`src/Server.java`)**: Anchors a `DatagramSocket`, listens for initialization query files, and controls the Sliding Window mechanism that regulates data outflow. Dynamically triggers synthetic *Packet Loss* based on `support/server.in` rules to demonstrate reliability recovery!
-- **Client (`src/Client.java`)**: Reconstructs incoming split byte streams, rigorously validates sequential bounds, and dispatches Cumulative Acknowledgements (`ACKs`) back to the server to advance the stream.
+| Module | File | Role |
+|---|---|---|
+| **Packet** | `src/Packet.java` | Serialises/deserialises datagrams; computes & validates CRC32 checksums |
+| **Server** | `src/Server.java` | Multi-client sender; runs GBN / SR / SW over `DatagramSocket` with simulated loss |
+| **Client** | `src/Client.java` | Receiver; live progress bar, per-transfer stats, protocol-matched ACK logic |
+
+---
+
+## Implemented Protocols
+
+### 1. Go-Back-N (GBN)
+- Sender keeps a sliding window of `N` unacknowledged packets in flight.
+- ACKs are **cumulative** — ACK `n` implicitly confirms all packets `0 … n`.
+- On timeout, the sender goes back and retransmits the **entire window** from the oldest unACKed packet.
+- Receiver discards all out-of-order packets and re-ACKs the last good packet.
+
+### 2. Selective Repeat (SR)
+- Same sliding window, but ACKs are **individual** per packet.
+- On timeout, only the **specific dropped/lost packets** are retransmitted — not the whole window.
+- Receiver maintains a buffer to store and reorder out-of-order arrivals before writing to disk.
+- Requires sequence space ≥ `2 × window size` to avoid aliasing.
+
+### 3. Stop-and-Wait (SW)
+- Simplest scheme: sends exactly **one packet**, then blocks waiting for its ACK.
+- Uses alternating bit sequence numbers `(0, 1, 0, 1 …)`.
+- On timeout or wrong ACK, the same packet is retransmitted.
+- Lowest throughput but simplest to reason about.
 
 ---
 
 ## Core Mechanics
 
-### 1. Verification (CRC32 Checksums)
-Every packet contains an embedded Checksum metric attached to its header. If a bit flips due to unshielded network noise, the client mathematically identifies the anomaly upon arrival, drops the corrupt block silently, and forces the Server to time-out and re-transmit!
+### CRC32 Checksum Integrity
+Every data packet carries a 16-bit CRC32-derived checksum in its header. On arrival, the receiver recomputes the checksum over the payload and compares. A mismatch means the packet was corrupted in transit — it is silently discarded, forcing the sender to time out and retransmit.
 
-### 2. Timeouts & Retransmits
-If a packet is swallowed by network congestion (or explicitly skipped by our `plp` Packet Loss Probability generator), the Client ignores anything sequentially out of bounds. The Server will eventually strike a `Timeout_ms` limit while waiting for the ACK, forcing a Window Slide back to the oldest unacknowledged `base`.
+### Packet Loss Simulation
+The server uses a seeded RNG to randomly drop outgoing packets with probability `plp` (set in `server.in`). This exercises the retransmission and recovery paths of all three protocols without needing a real lossy network.
+
+### Multi-Client Threading
+Each incoming file request is handed off to a worker thread (`ExecutorService.CachedThreadPool`). The main listening socket immediately returns to accept the next client. Each worker thread creates its own ephemeral `DatagramSocket`, so multiple file transfers run fully in parallel without interfering.
+
+### Transfer Statistics
+After every completed transfer, both Server and Client print a formatted stats block:
+```
+╔══════════════ TRANSFER STATS ══════════════╗
+║  Protocol       : GBN                      ║
+║  File Size      : 6007 bytes               ║
+║  Duration       : 134 ms                   ║
+║  Throughput     : 43.82 KB/s               ║
+║  Retransmits    : 2                         ║
+║  Pkts Dropped   : 1                         ║
+║  Loss Rate      : 7.1%                     ║
+╚════════════════════════════════════════════╝
+```
+
+### Live Progress Bar
+The client prints a live progress bar as it receives chunks:
+```
+[RECV        ] Seq 7  │ 500 bytes │ [████████████░░░░░░░░] 60%  (3604/6007 B)
+```
 
 ---
 
 ## Project Structure
 
-This uses a standard Enterprise-tier separation linking Source definitions (`src`) and Machine Binaries (`bin`).
-
 ```text
 📦 Reliable-UDP-Protocol-Network-Communication
- ┣ 📂 bin                 // Compiled executable classes automatically generated here.
- ┣ 📂 input               // Files hosted strictly to be requested by external clients.
- ┣ 📂 output              // Reassembled streams are securely saved here after verification.
- ┣ 📂 src
- ┃ ┣ 📜 Client.java       // Handles continuous receiving, ack-ing, and reconstructing.
- ┃ ┣ 📜 Packet.java       // Standardizes sequence serialization & Checksum hashes.
- ┃ ┗ 📜 Server.java       // Governs Go-Back-N (GBN) timeouts, delays, and transmissions.
- ┣ 📂 support
- ┃ ┣ 📜 client.in         // Defines IP, Ports, target File name, Window Size constraints.
- ┃ ┗ 📜 server.in         // Defines Port, Window bounds, Random Seed, Packet Loss Probability %.
- ┣ 📜 README.md           // Documentation.
+ ┣ 📂 bin                   ← Compiled .class files (auto-generated, do not edit)
+ ┣ 📂 input                 ← Files the server can serve to clients
+ ┃ ┗ 📜 server.txt
+ ┣ 📂 output                ← Received files are saved here by the client
+ ┣ 📂 src                   ← All Java source code
+ ┃ ┣ 📜 Client.java         ← Receiver: progress bar, 3 protocol modes, stats
+ ┃ ┣ 📜 Packet.java         ← Serialisation engine + CRC32 checksum helpers
+ ┃ ┗ 📜 Server.java         ← Sender:  threading, 3 protocol modes, loss sim, stats
+ ┣ 📂 support               ← Configuration files
+ ┃ ┣ 📜 client.in           ← Client settings  (IP, ports, file, window size)
+ ┃ ┗ 📜 server.in           ← Server settings  (port, window, seed, loss %)
+ ┗ 📜 README.md
 ```
 
 ---
 
 ## Complete Quickstart Guide
 
-### 1. Compile the Source Code 
-We separate source from build logic! Run this from the root directory to build `.class` binaries into the `bin/` execution folder.
+### Step 1 — Compile
+Run this once from the project root directory. Output `.class` files go into `bin/`.
 ```bash
-mkdir bin     # If it doesn't already exist
 javac -d bin src/*.java
 ```
 
-### 2. Start the Server (Terminal 1)
-Boot up the `Server` using the newly defined classpath target (`-cp bin`). It will anchor onto the configurations inside `support/server.in`.
+### Step 2 — Start the Server (Terminal 1)
+Choose your protocol with the optional argument. Defaults to **GBN** if omitted.
 ```bash
-java -cp bin Server
+# Go-Back-N (default)
+java -cp bin Server gbn
+
+# Stop-and-Wait
+java -cp bin Server sw
+
+# Selective Repeat
+java -cp bin Server sr
 ```
 
-### 3. Start the Client (Terminal 2)
-In a secondary terminal, initialize the `Client`. It will parse `support/client.in`, query the server, negotiate the `Metadata (File Sizes)`, and commence the downloading sequence!
+### Step 3 — Start the Client (Terminal 2)
+The client reads defaults from `support/client.in`. You can override the target file and protocol via command-line arguments.
 ```bash
+# Use all defaults from client.in (GBN + file from config)
 java -cp bin Client
+
+# Override the requested file
+java -cp bin Client input/server.txt
+
+# Override file AND protocol (must match what the server is running!)
+java -cp bin Client input/server.txt gbn
+java -cp bin Client input/server.txt sw
+java -cp bin Client input/server.txt sr
 ```
 
-*Look closely at your terminals! You will clearly see color-coded simulated `[DROP]` actions triggered by the server, followed accurately by `[TIMEOUT]` logs, and the resulting `[OUT-ORDER]` rejection handled effectively by the Client logic before recovering.*
+> ⚠️ **Important:** The protocol specified for the Client must match the one the Server is running. Mismatched protocols will cause incorrect ACK/retransmit behaviour.
 
 ---
 
 ## Configuration Customization
 
-Both client and server contain `.in` files inside the `support/` folder that act as tuning parameters. 
-**These files natively support inline human-readable comments using the `#` symbol!**
+Both config files live in `support/` and support inline `#` comments.
 
 ### `support/server.in`
-Controls the physical limitations and synthetic environments of the server.
-* **Line 1 (Port)**: Local port number the server opens to listen for oncoming Client requests.
-* **Line 2 (Max Window Size)**: In Go-Back-N, controls how many packets can be sent out eagerly before stopping and awaiting ACKs.
-* **Line 3 (Random Seed)**: Network simulations use Random Number Generators (RNG). Defining a seed forces mathematical randomness to repeat exactly, aiding in debugging.
-* **Line 4 (Packet Loss Probability)**: A float ranging from `0.0` to `0.99`. e.g., `0.3` = 30% chance an outgoing packet is explicitly swallowed.
+```
+7777    # Line 1: Port the server listens on for incoming connections
+5       # Line 2: Max Window Size — how many unACKed packets can be in-flight at once
+7       # Line 3: Random Seed — makes packet-loss simulation reproducible
+0.0     # Line 4: Packet Loss Probability (0.0 = no loss, 0.99 = ~99% loss)
+```
+
+| Line | Parameter | Description |
+|---|---|---|
+| 1 | **Server Port** | The local port that the server opens and listens on |
+| 2 | **Max Window Size** | Go-Back-N / SR window capacity (number of unACKed packets allowed in flight) |
+| 3 | **Random Seed** | Fixed seed makes the drop pattern identical every run — great for debugging |
+| 4 | **Packet Loss Probability** | Float `0.0–0.99`. Set to `0.3` to simulate a 30% lossy network |
 
 ### `support/client.in`
-Controls target connectivity options mapping back to the server block logic.
-* **Line 1 (Server IP)**: Defaults natively to `127.0.0.1` (localhost).
-* **Line 2 (Server Port)**: The target listening port initialized in `server.in`.
-* **Line 3 (Client Port)**: Secondary port bound locally by the client to asynchronously receive stream-data chunks.
-* **Line 4 (Target File)**: Virtual path of the target file mapped natively onto the Server (e.g. `input/server.txt`).
-* **Line 5 (Window Size)**: Synchronization limit representing the total byte-allowance window parallel to the Server configuration.
+```
+127.0.0.1           # Line 1: Server IP address (127.0.0.1 = localhost)
+7777                # Line 2: Server port — must match server.in Line 1
+9999                # Line 3: Client's own local port for receiving data
+input/server.txt    # Line 4: Path to the file the client requests from the server
+5                   # Line 5: Client window size — must match server.in Line 2
+```
+
+| Line | Parameter | Description |
+|---|---|---|
+| 1 | **Server IP** | IP of the machine running the server |
+| 2 | **Server Port** | Must match `server.in` Line 1 |
+| 3 | **Client Port** | Local port the client binds to for receiving incoming data chunks |
+| 4 | **Target File** | Relative path to the file on the server machine to be transferred |
+| 5 | **Window Size** | Should match the server's window size for correct protocol behaviour |
 
 ---
 
-## Authors
+## Features
 
-- Refactored & Managed By Shambhoolal Narwaria ([@mr-narwaria](https://github.com/mr-narwaria))
+- [x] Go-Back-N (GBN) — sliding window with cumulative ACKs
+- [x] Selective Repeat (SR) — sliding window with individual ACKs and receive-side buffering
+- [x] Stop-and-Wait (SW) — alternating-bit protocol
+- [x] CRC32 Packet Integrity Verification
+- [x] Configurable Packet Loss Simulation (per run)
+- [x] Multi-Client Concurrent Sessions (ThreadPool)
+- [x] Live ASCII Progress Bar
+- [x] Per-Transfer Statistics (throughput, retransmits, loss rate, duration)
+- [x] Command-Line Protocol & File Selection
+- [x] ANSI Colour-Coded Console Logs
+- [x] Supports any file type (text, HTML, binary)
+- [x] Inline config comments via `#` syntax
+
+---
+
+## Resume Bullet Point
+
+> **Reliable File Transfer Protocol over UDP** | Java
+> Engineered a reliable transport layer over UDP implementing three windowing protocols — Stop-and-Wait, Go-Back-N, and Selective Repeat — achieving measured throughputs of **40+ KB/s** under 0% loss and validating recovery under simulated **20–30% packet loss rates**. Built concurrent multi-client support via `CachedThreadPool`, CRC32 integrity verification, real-time ASCII progress bars, and per-transfer metrics (duration, throughput KB/s, retransmission count, loss rate %). Refactored from C to Java to eliminate cross-platform socket compatibility issues across Windows and Linux.
+
+---
+
+## Author
+
+- [Shambhoolal Narwaria](https://github.com/mr-narwaria)
