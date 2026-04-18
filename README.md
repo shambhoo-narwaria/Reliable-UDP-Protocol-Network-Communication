@@ -8,8 +8,6 @@ The most famous reliable transport layer protocol is TCP, but it is tightly inte
 
 The system guarantees reliable, ordered, error-checked file delivery over an intentionally unreliable network channel — complete with **live packet loss simulation**, **CRC32 corruption detection**, **automatic retransmission**, and **real-time performance metrics**.
 
-> **The codebase was fully refactored from C to Java** to eliminate cross-platform Winsock / POSIX compatibility issues and enable native compilation on Windows, Linux, and macOS without any changes.
-
 ---
 
 ## Architecture Overview
@@ -191,13 +189,6 @@ input/server.txt    # Line 4: Path to the file the client requests from the serv
 - [x] ANSI Colour-Coded Console Logs
 - [x] Supports any file type (text, HTML, binary)
 - [x] Inline config comments via `#` syntax
-
----
-
-## Resume Bullet Point
-
-> **Reliable File Transfer Protocol over UDP** | Java
-> Engineered a reliable transport layer over UDP implementing three windowing protocols — Stop-and-Wait, Go-Back-N, and Selective Repeat — achieving measured throughputs of **40+ KB/s** under 0% loss and validating recovery under simulated **20–30% packet loss rates**. Built concurrent multi-client support via `CachedThreadPool`, CRC32 integrity verification, real-time ASCII progress bars, and per-transfer metrics (duration, throughput KB/s, retransmission count, loss rate %). Refactored from C to Java to eliminate cross-platform socket compatibility issues across Windows and Linux.
 
 ---
 
